@@ -19,6 +19,7 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -60,7 +61,7 @@ int crypt_argon2_check(const char *password, size_t password_length,
 {
 	struct rusage rstart, rend;
 	int r = 0, step = 0;
-	long ms = 0, ms_old = 0;
+	long ms = 0, ms_old = 0, ms_all = 0;
 	char *key = NULL;
 	unsigned int iterations;
 
@@ -89,24 +90,30 @@ int crypt_argon2_check(const char *password, size_t password_length,
 		}
 
 		ms = time_ms(&rstart, &rend);
-		//printf("%ld ms\n", (long)ms);
+		printf("[iterations %u] %ld ms, diff %lu\n", iterations, ms, labs(ms - ms_old));
 		if (ms > iter_msec)
 			break;
 
-		if (ms_old == 0 || labs(ms - ms_old) > 1000)
+		if (labs(ms - ms_old) > 1000)
 			iterations += 1;
-		else if (labs(ms - ms_old) <= 300)
-			iterations += 100;
-		else if (labs(ms - ms_old) <= 600)
-			iterations += 50;
-		else
+		else if (labs(ms - ms_old) > 600)
 			iterations += 10;
+		else if (labs(ms - ms_old) > 300)
+			iterations += 100;
+		else if (labs(ms - ms_old) > 100)
+			iterations += 300;
+		else if (labs(ms - ms_old) > 10)
+			iterations += 1000;
+		else
+			iterations += 3000;
 
-		if (++step > 20) {
+		if (++step > 100 || ms_all > 10000) {
+			printf("Benchmark too low maximum (%lu / %lu).\n", ms, ms_all);
 			r = -EINVAL;
 			goto out;
 		}
 		ms_old = ms;
+		ms_all += ms;
 	}
 
 	if (t_cost)

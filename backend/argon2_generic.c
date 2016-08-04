@@ -20,6 +20,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include "crypto_backend.h"
 #include "argon2.h"
 
@@ -32,6 +33,9 @@ int argon2(const char *password, size_t password_length,
 
 	r = argon2i_hash_raw(iterations, memory, parallel, password, password_length,
 			     salt, salt_length, key, key_length);
+
+	if (r)
+		printf("Argon2 error: %s\n", argon2_error_message(r));
 
 	switch (r) {
 	case ARGON2_OK:
