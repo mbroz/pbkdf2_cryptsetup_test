@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include "backend/crypto_backend.h"
+#include "crypto_backend.h"
 
 static long time_ms(struct rusage *start, struct rusage *end)
 {
@@ -51,11 +51,79 @@ static long time_ms(struct rusage *start, struct rusage *end)
 	return ms;
 }
 
+/* FIXME: this is increadible hack, replace it with some more inteligent
+ * benchmarking. */
+int crypt_argon2_check(const char *password, size_t password_length,
+		      const char *salt, size_t salt_length,
+		      size_t key_length, uint32_t m_cost, uint32_t p_cost,
+		      int iter_msec,  uint32_t *t_cost)
+{
+	struct rusage rstart, rend;
+	int r = 0, step = 0;
+	long ms = 0, ms_old = 0;
+	char *key = NULL;
+	unsigned int iterations;
+
+	if (key_length <= 0 || iter_msec <= 0)
+		return -EINVAL;
+
+	key = malloc(key_length);
+	if (!key)
+		return -ENOMEM;
+
+	iterations = 1; // FIXME: min
+	while (ms < iter_msec) {
+		if (getrusage(RUSAGE_SELF, &rstart) < 0) {
+			r = -EINVAL;
+			goto out;
+		}
+		//printf("A: t = %d, m = %d, p = %d: ", iterations, m_cost, p_cost);
+		r = crypt_pbkdf("argon2", NULL, password, password_length, salt,
+				salt_length, key, key_length, iterations, m_cost, p_cost);
+		if (r < 0)
+			goto out;
+
+		if (getrusage(RUSAGE_SELF, &rend) < 0) {
+			r = -EINVAL;
+			goto out;
+		}
+
+		ms = time_ms(&rstart, &rend);
+		//printf("%ld ms\n", (long)ms);
+		if (ms > iter_msec)
+			break;
+
+		if (ms_old == 0 || labs(ms - ms_old) > 1000)
+			iterations += 1;
+		else if (labs(ms - ms_old) <= 300)
+			iterations += 100;
+		else if (labs(ms - ms_old) <= 600)
+			iterations += 50;
+		else
+			iterations += 10;
+
+		if (++step > 20) {
+			r = -EINVAL;
+			goto out;
+		}
+		ms_old = ms;
+	}
+
+	if (t_cost)
+		*t_cost = iterations;
+out:
+	if (key) {
+		crypt_backend_memzero(key, key_length);
+		free(key);
+	}
+	return r;
+}
+
 /* This code benchmarks PBKDF and returns iterations/second using specified hash */
 int crypt_pbkdf_check(const char *kdf, const char *hash,
 		      const char *password, size_t password_length,
 		      const char *salt, size_t salt_length,
-		      size_t key_length, uint64_t *iter_secs)
+		      size_t key_length, uint32_t *iter_secs)
 {
 	struct rusage rstart, rend;
 	int r = 0, step = 0;
@@ -78,7 +146,7 @@ int crypt_pbkdf_check(const char *kdf, const char *hash,
 		}
 
 		r = crypt_pbkdf(kdf, hash, password, password_length, salt,
-				salt_length, key, key_length, iterations);
+				salt_length, key, key_length, iterations, 0, 0);
 		if (r < 0)
 			goto out;
 

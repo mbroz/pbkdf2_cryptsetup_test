@@ -176,7 +176,7 @@ int pbkdf2_test_vectors(void)
 			if (crypt_pbkdf("pbkdf2", vec->hash,
 				vec->password, vec->password_length,
 				vec->salt, vec->salt_length,
-				result, j, vec->iterations)) {
+				result, j, vec->iterations, 0, 0)) {
 				printf("pbkdf2 failed, vector %u\n", i);
 				return 1;
 			}

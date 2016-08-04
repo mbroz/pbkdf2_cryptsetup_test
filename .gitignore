@@ -3,3 +3,4 @@
 crypt_backend.kdev4
 *~
 *.o
+phc-winner-argon2
